@@ -1,0 +1,132 @@
+import zipfile
+import os
+
+# Define project structure
+project_name = "ashanbot-whatsapp"
+base_path = f"/mnt/data/{project_name}"
+os.makedirs(base_path, exist_ok=True)
+
+# File contents
+files = {
+    "main.py": '''from flask import Flask, request
+from twilio.twiml.messaging_response import MessagingResponse
+from datetime import datetime
+import os
+from dotenv import load_dotenv
+import hashlib
+import random
+
+load_dotenv()
+
+app = Flask(__name__)
+
+ALLOWED_USERS = os.getenv("ALLOWED_NUMBERS", "").split(",")
+
+def generate_provably_fair_result():
+    server_seed = "d8807de83189d210edea31426b37bff19c18fbbf8bb951d1"
+    client_seeds = [
+        os.getenv("CLIENT_SEED1", "UABX51mQPtYpAP20kakb-0"),
+        os.getenv("CLIENT_SEED2", "5JKXBIGEBOFOsaTfpPR3"),
+        os.getenv("CLIENT_SEED3", "RandomSeed")
+    ]
+
+    combined = server_seed + ''.join(client_seeds)
+    hash_result = hashlib.sha512(combined.encode()).hexdigest()
+
+    flyaway_hex = hash_result[:8]
+    flyaway_decimal = int(flyaway_hex, 16)
+    flyaway_multiplier = max(1.0, (flyaway_decimal % 10000) / 100.0)
+
+    return {
+        "round_id": random.randint(100000, 999999),
+        "odds": round(flyaway_multiplier, 2),
+        "time": datetime.now().strftime("%H:%M:%S"),
+        "hash": hash_result[:64]
+    }
+
+def get_live_signal():
+    result = generate_provably_fair_result()
+    return (
+        f"📡 *Aviator Signal*\\n"
+        f"🌐 Round: {result['round_id']}\\n"
+        f"💥 Odds: {result['odds']}x\\n"
+        f"⏰ Time: {result['time']}\\n"
+        f"🔐 Hash: {result['hash']}"
+    )
+
+@app.route("/whatsapp", methods=["POST"])
+def whatsapp_reply():
+    incoming_msg = request.values.get('Body', '').strip().lower()
+    user_number = request.values.get('From', '')
+    resp = MessagingResponse()
+    msg = resp.message()
+
+    if user_number not in ALLOWED_USERS:
+        msg.body("❌ Unauthorized user.")
+    elif "ashanbot" in incoming_msg:
+        signal = get_live_signal()
+        msg.body(signal)
+        with open("signal_log.txt", "a") as f:
+            f.write(f"{datetime.now()} - {user_number} used: {incoming_msg}\\n")
+    else:
+        msg.body("❌ Invalid command. Type *ashanbot* to get live signal.")
+
+    return str(resp)
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8080, debug=True)
+''',
+    ".env.example": '''ALLOWED_NUMBERS=whatsapp:+94766412703
+CLIENT_SEED1=UABX51mQPtYpAP20kakb-0
+CLIENT_SEED2=5JKXBIGEBOFOsaTfpPR3
+CLIENT_SEED3=RandomSeed
+''',
+    "requirements.txt": "Flask\ntwilio\npython-dotenv\n",
+    "README.md": '''# 🧠 AshanBot WhatsApp Aviator Signal Bot
+
+> A real-time WhatsApp bot that sends provably fair Aviator signals when you type `ashanbot`.
+
+## 🔧 Requirements
+
+- Python (3.10+)
+- Twilio WhatsApp Sandbox
+- Flask
+- dotenv
+
+## 📁 .env Configuration
+
+```env
+ALLOWED_NUMBERS=whatsapp:+94766412703
+CLIENT_SEED1=UABX51mQPtYpAP20kakb-0
+CLIENT_SEED2=5JKXBIGEBOFOsaTfpPR3
+CLIENT_SEED3=RandomSeed
+```
+
+## 🚀 Run
+
+```bash
+python main.py
+```
+
+Then set your Twilio webhook to:
+```
+https://<your-replit-username>.<repl-name>.repl.co/whatsapp
+```
+'''
+}
+
+# Write files
+for filename, content in files.items():
+    with open(os.path.join(base_path, filename), "w") as f:
+        f.write(content)
+
+# Create ZIP
+zip_path = f"/mnt/data/{project_name}.zip"
+with zipfile.ZipFile(zip_path, "w") as zipf:
+    for root, dirs, file_list in os.walk(base_path):
+        for file in file_list:
+            full_path = os.path.join(root, file)
+            arcname = os.path.relpath(full_path, base_path)
+            zipf.write(full_path, arcname)
+
+zip_path
